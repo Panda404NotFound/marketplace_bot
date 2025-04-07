@@ -2,6 +2,7 @@ import logging
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 
 from config import BOT_TOKEN
 from database import init_db
@@ -23,6 +24,13 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     storage = MemoryStorage()
     dp = Dispatcher(bot, storage=storage)
+    
+    # Устанавливаем команды для меню бота
+    commands = [
+        BotCommand(command="/start", description="Запустить бота"),
+        BotCommand(command="/help", description="Помощь по боту")
+    ]
+    await bot.set_my_commands(commands)
     
     # Регистрируем все обработчики
     register_all_handlers(dp)
