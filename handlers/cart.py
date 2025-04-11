@@ -5,6 +5,7 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 from database.database import get_cart_items, get_orders, remove_from_cart, create_order, cancel_order
 from config.config import DEFAULT_DELIVERY_ADDRESS
 from keyboards.keyboards import get_cart_menu, get_back_menu, get_payment_methods, get_orders_to_delete, get_confirmation_keyboard, get_main_menu, get_payment_info_keyboard, get_user_orders_menu
+from keyboards.fallback import save_navigation_state, reset_navigation_history
 
 class PaymentStates(StatesGroup):
     """Состояния для оплаты заказов."""
@@ -12,21 +13,44 @@ class PaymentStates(StatesGroup):
 
 async def process_cart(callback_query: types.CallbackQuery):
     """Обработчик для перехода в раздел 'Моя корзина'."""
-    await callback_query.answer()
-    
-    await callback_query.message.edit_text(
-        "🛒 <b>Моя корзина</b>\n\n"
-        "В этом разделе вы можете управлять товарами в вашей корзине, "
-        "оформлять и оплачивать заказы.",
-        reply_markup=get_cart_menu(),
-        parse_mode='HTML'
-    )
+    try:
+        await callback_query.answer()
+        
+        # Сохраняем текущее состояние навигации
+        user_id = callback_query.from_user.id
+        
+        # При переходе к основным разделам лучше не сохранять историю
+        # Это поможет избежать цикличных переходов между основными разделами
+        if callback_query.data == "cart":
+            reset_navigation_history(user_id)
+        
+        await save_navigation_state(user_id, 'cart')
+        
+        await callback_query.message.edit_text(
+            "🛒 <b>Моя корзина</b>\n\n"
+            "В этом разделе вы можете управлять товарами в вашей корзине, "
+            "оформлять и оплачивать заказы.",
+            reply_markup=get_cart_menu(),
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        # print(f"Error in process_cart for user {user_id}: {e}")
+        try:
+            await callback_query.message.edit_text(
+                "Произошла ошибка. Выберите действие:",
+                reply_markup=get_main_menu()
+            )
+        except:
+            pass
 
 async def process_my_orders(callback_query: types.CallbackQuery):
     """Обработчик для просмотра товаров в корзине."""
     await callback_query.answer()
     
+    # Сохраняем текущее состояние навигации
     user_id = callback_query.from_user.id
+    await save_navigation_state(user_id, 'my_orders')
+    
     cart_items = get_cart_items(user_id)
     
     if not cart_items:
@@ -93,7 +117,10 @@ async def process_delete_order(callback_query: types.CallbackQuery):
     """Обработчик для удаления заказов."""
     await callback_query.answer()
     
+    # Сохраняем текущее состояние навигации
     user_id = callback_query.from_user.id
+    await save_navigation_state(user_id, 'delete_order')
+    
     cart_items = get_cart_items(user_id)
     
     if not cart_items:
@@ -165,7 +192,10 @@ async def process_pay_orders(callback_query: types.CallbackQuery, state: FSMCont
     """Обработчик для перехода к оплате всех заказов одним платежом."""
     await callback_query.answer()
     
+    # Сохраняем текущее состояние навигации
     user_id = callback_query.from_user.id
+    await save_navigation_state(user_id, 'payment')
+    
     cart_items = get_cart_items(user_id)
     
     if not cart_items:

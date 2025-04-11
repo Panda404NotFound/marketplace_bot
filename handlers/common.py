@@ -4,6 +4,7 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 
 from database.database import get_user, create_user, update_user
 from keyboards.keyboards import get_main_menu
+from keyboards.fallback import reset_navigation_history
 
 class RegisterStates(StatesGroup):
     """Состояния для регистрации пользователя."""
@@ -14,7 +15,10 @@ async def cmd_start(message: types.Message, state: FSMContext):
     # Сбрасываем текущее состояние
     await state.finish()
     
+    # Сбрасываем историю навигации
     user_id = message.from_user.id
+    reset_navigation_history(user_id)
+    
     username = message.from_user.username
     first_name = message.from_user.first_name
     last_name = message.from_user.last_name
@@ -41,6 +45,21 @@ async def cmd_start(message: types.Message, state: FSMContext):
             reply_markup=get_main_menu()
         )
 
+async def cmd_reset(message: types.Message, state: FSMContext):
+    """Обработчик команды /reset для сброса состояния бота."""
+    # Сбрасываем текущее состояние
+    await state.finish()
+    
+    # Сбрасываем историю навигации
+    user_id = message.from_user.id
+    reset_navigation_history(user_id)
+    
+    await message.answer(
+        "Состояние бота сброшено! 🔄\n\n"
+        "Выберите, что хотите сделать:",
+        reply_markup=get_main_menu()
+    )
+
 async def process_name(message: types.Message, state: FSMContext):
     """Обработчик ввода имени пользователя."""
     user_id = message.from_user.id
@@ -65,7 +84,8 @@ async def cmd_help(message: types.Message):
         "🛍️ <b>Бот-Маркетплейс</b> - удобный способ заказывать товары!\n\n"
         "<b>Основные команды:</b>\n"
         "• /start - Запуск бота и возврат в главное меню\n"
-        "• /help - Показать это сообщение\n\n"
+        "• /help - Показать это сообщение\n"
+        "• /reset - Сбросить состояние бота (используйте при зависаниях)\n\n"
         
         "<b>Доступные функции:</b>\n"
         "• <b>Мой кабинет</b> - просмотр профиля, истории заказов и настроек\n"
@@ -95,6 +115,7 @@ def register_common_handlers(dp):
     """Регистрация обработчиков общих команд."""
     dp.register_message_handler(cmd_start, commands=["start"], state="*")
     dp.register_message_handler(cmd_help, commands=["help"], state="*")
+    dp.register_message_handler(cmd_reset, commands=["reset"], state="*")
     dp.register_message_handler(process_name, state=RegisterStates.waiting_for_name)
     
     # Обработчик callback_query будет дополнен в других файлах 

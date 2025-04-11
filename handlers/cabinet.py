@@ -5,6 +5,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from database.database import get_user, get_orders, get_order
 from keyboards.keyboards import get_cabinet_menu, get_main_menu, get_back_menu, get_user_orders_menu, get_payment_methods
+from keyboards.fallback import save_navigation_state, reset_navigation_history
 from config.config import DEFAULT_DELIVERY_ADDRESS
 
 # Создаем класс состояний для пагинации
@@ -13,21 +14,44 @@ class OrderHistoryStates(StatesGroup):
 
 async def process_cabinet(callback_query: types.CallbackQuery):
     """Обработчик для перехода в раздел 'Мой кабинет'."""
-    await callback_query.answer()
-    
-    await callback_query.message.edit_text(
-        "🏠 <b>Мой кабинет</b>\n\n"
-        "Здесь вы можете управлять своим профилем, "
-        "просматривать историю заказов и настройки.",
-        reply_markup=get_cabinet_menu(),
-        parse_mode='HTML'
-    )
+    try:
+        await callback_query.answer()
+        
+        # Сохраняем текущее состояние навигации
+        user_id = callback_query.from_user.id
+        
+        # При переходе к основным разделам лучше не сохранять историю
+        # Это поможет избежать цикличных переходов между основными разделами
+        if callback_query.data == "cabinet":
+            reset_navigation_history(user_id)
+            
+        await save_navigation_state(user_id, 'cabinet')
+        
+        await callback_query.message.edit_text(
+            "🏠 <b>Мой кабинет</b>\n\n"
+            "Здесь вы можете управлять своим профилем, "
+            "просматривать историю заказов и настройки.",
+            reply_markup=get_cabinet_menu(),
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        print(f"Error in process_cabinet for user {user_id}: {e}")
+        try:
+            await callback_query.message.edit_text(
+                "Произошла ошибка. Выберите действие:",
+                reply_markup=get_main_menu()
+            )
+        except:
+            pass
 
 async def process_profile(callback_query: types.CallbackQuery):
     """Обработчик для просмотра профиля пользователя."""
     await callback_query.answer()
     
+    # Сохраняем текущее состояние навигации
     user_id = callback_query.from_user.id
+    await save_navigation_state(user_id, 'profile')
+    
     user = get_user(user_id)
     
     if user:
@@ -49,6 +73,10 @@ async def process_profile(callback_query: types.CallbackQuery):
 async def process_order_history(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик для просмотра истории заказов."""
     await callback_query.answer()
+    
+    # Сохраняем текущее состояние навигации
+    user_id = callback_query.from_user.id
+    await save_navigation_state(user_id, 'order_history')
     
     # Извлекаем номер страницы из callback_data, если он есть
     page = 1
@@ -201,6 +229,10 @@ async def process_order_history_navigation(callback_query: types.CallbackQuery, 
 async def process_settings(callback_query: types.CallbackQuery):
     """Обработчик для просмотра настроек (заглушка)."""
     await callback_query.answer()
+    
+    # Сохраняем текущее состояние навигации
+    user_id = callback_query.from_user.id
+    await save_navigation_state(user_id, 'settings')
     
     settings_text = (
         "⚙️ <b>Настройки</b>\n\n"

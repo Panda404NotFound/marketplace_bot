@@ -19,11 +19,16 @@ def register_all_handlers(dp: Dispatcher):
         dp: Экземпляр диспетчера бота
     """
     # Порядок регистрации имеет значение!
+    
     # Сначала регистрируем общие обработчики
     register_common_handlers(dp)
     
-    # Затем специфические обработчики
+    # Регистрируем обработчики навигации
+    # важно регистрировать их раньше других специфических обработчиков,
+    # чтобы fallback обработчики имели приоритет
     register_navigation_handlers(dp)
+    
+    # Затем специфические обработчики
     register_order_handlers(dp)
     register_delivery_handlers(dp)
     register_cart_handlers(dp)

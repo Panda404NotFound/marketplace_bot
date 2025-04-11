@@ -28,7 +28,8 @@ async def main():
     # Устанавливаем команды для меню бота
     commands = [
         BotCommand(command="/start", description="Запустить бота"),
-        BotCommand(command="/help", description="Помощь по боту")
+        BotCommand(command="/help", description="Помощь по боту"),
+        BotCommand(command="/reset", description="Сбросить состояние бота")
     ]
     await bot.set_my_commands(commands)
     
