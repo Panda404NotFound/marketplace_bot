@@ -22,6 +22,7 @@ async def process_cart(callback_query: types.CallbackQuery):
         parse_mode='HTML'
     )
 
+# Удаляем комментарий TODO, так как мы реализуем запрошенную функциональность
 async def process_my_orders(callback_query: types.CallbackQuery):
     """Обработчик для просмотра товаров в корзине."""
     await callback_query.answer()
@@ -31,32 +32,87 @@ async def process_my_orders(callback_query: types.CallbackQuery):
     
     if not cart_items:
         cart_text = "🛒 <b>Моя корзина</b>\n\nВаша корзина пуста."
-    else:
-        cart_text = "🛒 <b>Товары в корзине</b>\n\n"
-        total_amount = 0
-        
-        for i, item in enumerate(cart_items, 1):
-            product = item['product']
-            quantity = item['quantity']
-            size = item['size'] or "Не указан"
-            color = item['color'] or "Не указан"
-            item_price = product.price * quantity
-            total_amount += item_price
-            
-            cart_text += (
-                f"<b>{i}. {product.title}</b>\n"
-                f"Цена: {product.price} ₽ x {quantity} = {item_price} ₽\n"
-                f"Размер: {size}\n"
-                f"Цвет: {color}\n\n"
-            )
-        
-        cart_text += f"<b>Итого: {total_amount} ₽</b>"
+        await callback_query.message.edit_text(
+            cart_text,
+            reply_markup=get_back_menu(),
+            parse_mode='HTML'
+        )
+        return
     
-    await callback_query.message.edit_text(
-        cart_text,
-        reply_markup=get_back_menu(),
-        parse_mode='HTML'
-    )
+    # Формируем текст о товарах в корзине
+    cart_text = "🛒 <b>Товары в корзине</b>\n\n"
+    total_amount = 0
+    
+    for i, item in enumerate(cart_items, 1):
+        product = item['product']
+        quantity = item['quantity']
+        size = item['size'] or "Не указан"
+        color = item['color'] or "Не указан"
+        
+        # Расчет цены с учетом количества
+        item_price = product.price * quantity
+        total_amount += item_price
+        
+        # Получаем информацию о маркетплейсе
+        marketplace_name = {
+            'wildberries': 'Wildberries',
+            'ozon': 'Ozon',
+            'yandex_market': 'Яндекс.Маркет'
+        }.get(product.marketplace, product.marketplace)
+        
+        cart_text += (
+            f"<b>{i}. {product.title}</b>\n"
+            f"Маркетплейс: {marketplace_name}\n"
+            f"Цена: {product.price} ₽ x {quantity} = {item_price} ₽\n"
+            f"Размер: {size}\n"
+            f"Цвет: {color}\n\n"
+        )
+    
+    cart_text += f"<b>Итого: {total_amount} ₽</b>"
+    
+    # Проверяем, есть ли у первого товара изображение, чтобы добавить его к сообщению
+    first_item = cart_items[0]
+    first_product = first_item['product']
+    
+    # Проверяем маркетплейс товара
+    if first_product.marketplace == 'wildberries':
+        # Для Wildberries не отправляем изображения
+        await callback_query.message.edit_text(
+            cart_text,
+            reply_markup=get_back_menu(),
+            parse_mode='HTML'
+        )
+    elif first_product.image_url:
+        try:
+            # Отладочная информация перед отправкой изображения
+            print(f"Пытаемся отправить изображение корзины: {first_product.image_url}")
+            print(f"Тип URL изображения корзины: {type(first_product.image_url)}")
+            print(f"Длина URL изображения корзины: {len(first_product.image_url) if first_product.image_url else 0}")
+            
+            # Отправляем новое сообщение с изображением
+            await callback_query.message.delete()  # Удаляем предыдущее сообщение
+            await callback_query.message.answer_photo(
+                photo=first_product.image_url,
+                caption=cart_text,
+                reply_markup=get_back_menu(),
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            # В случае ошибки отправляем только текст
+            print(f"Ошибка при отправке изображения товара: {e}")
+            print(f"Детали ошибки корзины: {str(e)}, тип ошибки: {type(e)}")
+            await callback_query.message.edit_text(
+                cart_text,
+                reply_markup=get_back_menu(),
+                parse_mode='HTML'
+            )
+    else:
+        # Если у первого товара нет изображения, отправляем только текст
+        await callback_query.message.edit_text(
+            cart_text,
+            reply_markup=get_back_menu(),
+            parse_mode='HTML'
+        )
 
 async def process_delete_order(callback_query: types.CallbackQuery):
     """Обработчик для удаления заказов."""
