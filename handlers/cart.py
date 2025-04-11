@@ -2,7 +2,7 @@ from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 
-from database.database import get_cart_items, get_orders, remove_from_cart, create_order, cancel_order
+from database.database import get_cart_items, get_orders, remove_from_cart, create_order, cancel_order, clear_cart
 from config.config import DEFAULT_DELIVERY_ADDRESS
 from keyboards.keyboards import get_cart_menu, get_back_menu, get_payment_methods, get_orders_to_delete, get_confirmation_keyboard, get_main_menu, get_payment_info_keyboard, get_user_orders_menu
 from keyboards.fallback import save_navigation_state, reset_navigation_history
@@ -395,6 +395,58 @@ async def process_cancel_action(callback_query: types.CallbackQuery):
         parse_mode='HTML'
     )
 
+async def process_remove_all_orders(callback_query: types.CallbackQuery):
+    """Обработчик для подтверждения удаления всех товаров из корзины."""
+    try:
+        await callback_query.answer()
+        
+        await callback_query.message.edit_text(
+            "🗑️ <b>Подтверждение удаления</b>\n\n"
+            "Вы уверены, что хотите удалить ВСЕ товары из корзины?",
+            reply_markup=get_confirmation_keyboard("remove_all_cart_items", 0),
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        print(f"Ошибка при обработке запроса на удаление всех товаров: {e}")
+        try:
+            await callback_query.message.edit_text(
+                "Произошла ошибка. Выберите действие:",
+                reply_markup=get_cart_menu()
+            )
+        except:
+            pass
+
+async def process_confirm_remove_all_cart_items(callback_query: types.CallbackQuery):
+    """Обработчик для подтверждения удаления всех товаров из корзины."""
+    try:
+        await callback_query.answer()
+        
+        user_id = callback_query.from_user.id
+        success = clear_cart(user_id)
+        
+        if success:
+            await callback_query.message.edit_text(
+                "✅ <b>Все товары успешно удалены из корзины</b>",
+                reply_markup=get_cart_menu(),
+                parse_mode='HTML'
+            )
+        else:
+            await callback_query.message.edit_text(
+                "❌ <b>Не удалось удалить товары из корзины</b>\n\n"
+                "Пожалуйста, попробуйте снова.",
+                reply_markup=get_cart_menu(),
+                parse_mode='HTML'
+            )
+    except Exception as e:
+        print(f"Ошибка при удалении всех товаров: {e}")
+        try:
+            await callback_query.message.edit_text(
+                "Произошла ошибка. Выберите действие:",
+                reply_markup=get_cart_menu()
+            )
+        except:
+            pass
+
 def register_cart_handlers(dp):
     """Регистрация обработчиков раздела 'Моя корзина'."""
     dp.register_callback_query_handler(process_cart, lambda c: c.data == "cart")
@@ -418,4 +470,9 @@ def register_cart_handlers(dp):
         process_paid_order,
         lambda c: c.data.startswith("paid_order_")
     )
-    dp.register_callback_query_handler(process_cancel_action, lambda c: c.data == "cancel_action") 
+    dp.register_callback_query_handler(process_cancel_action, lambda c: c.data == "cancel_action")
+    dp.register_callback_query_handler(process_remove_all_orders, lambda c: c.data == "remove_all_orders")
+    dp.register_callback_query_handler(
+        process_confirm_remove_all_cart_items,
+        lambda c: c.data == "confirm_remove_all_cart_items_0"
+    ) 

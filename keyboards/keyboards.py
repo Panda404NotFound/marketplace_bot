@@ -96,6 +96,11 @@ def get_orders_to_delete(orders):
     if not orders:
         keyboard.add(InlineKeyboardButton("У вас нет заказов", callback_data="no_action"))
     else:
+        # Добавляем кнопку "Удалить все заказы", если есть хотя бы один заказ
+        keyboard.add(
+            InlineKeyboardButton("🗑️ Удалить все заказы", callback_data="remove_all_orders")
+        )
+        
         for order in orders:
             order_id = order['id']
             total = order['total_amount']

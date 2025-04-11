@@ -134,6 +134,36 @@ def remove_from_cart(user_id, cart_item_id):
         session.close()
         return False
 
+def clear_cart(user_id):
+    """Удалить все товары из корзины пользователя."""
+    session = get_session()
+    user = session.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        session.close()
+        return False
+    
+    try:
+        # Получаем все товары в корзине пользователя
+        cart_items = session.query(CartItem).filter(CartItem.user_id == user.id).all()
+        
+        # Если корзина пуста, возвращаем успех
+        if not cart_items:
+            session.close()
+            return True
+        
+        # Удаляем все товары из корзины
+        for item in cart_items:
+            session.delete(item)
+        
+        session.commit()
+        return True
+    except Exception as e:
+        print(f"Ошибка при очистке корзины: {e}")
+        session.rollback()
+        return False
+    finally:
+        session.close()
+
 # Методы для работы с заказами
 def create_order(user_id, delivery_address, delivery_time=None, payment_method=None):
     """Создать новый заказ из товаров в корзине."""
