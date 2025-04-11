@@ -4,7 +4,7 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 
 from database.database import get_cart_items, get_orders, remove_from_cart, create_order, cancel_order
 from config.config import DEFAULT_DELIVERY_ADDRESS
-from keyboards.keyboards import get_cart_menu, get_back_menu, get_payment_methods, get_orders_to_delete, get_confirmation_keyboard, get_main_menu
+from keyboards.keyboards import get_cart_menu, get_back_menu, get_payment_methods, get_orders_to_delete, get_confirmation_keyboard, get_main_menu, get_payment_info_keyboard, get_user_orders_menu
 
 class PaymentStates(StatesGroup):
     """Состояния для оплаты заказов."""
@@ -22,7 +22,6 @@ async def process_cart(callback_query: types.CallbackQuery):
         parse_mode='HTML'
     )
 
-# Удаляем комментарий TODO, так как мы реализуем запрошенную функциональность
 async def process_my_orders(callback_query: types.CallbackQuery):
     """Обработчик для просмотра товаров в корзине."""
     await callback_query.answer()
@@ -42,6 +41,9 @@ async def process_my_orders(callback_query: types.CallbackQuery):
     # Формируем текст о товарах в корзине
     cart_text = "🛒 <b>Товары в корзине</b>\n\n"
     total_amount = 0
+    
+    # Подготовим данные для клавиатуры
+    orders_for_keyboard = []
     
     for i, item in enumerate(cart_items, 1):
         product = item['product']
@@ -67,52 +69,25 @@ async def process_my_orders(callback_query: types.CallbackQuery):
             f"Размер: {size}\n"
             f"Цвет: {color}\n\n"
         )
+        
+        # Добавляем товар для клавиатуры
+        orders_for_keyboard.append({
+            'id': item['id'],
+            'total_amount': item_price,
+            'status': 'new'  # Все товары в корзине имеют статус 'new'
+        })
     
     cart_text += f"<b>Итого: {total_amount} ₽</b>"
     
-    # Проверяем, есть ли у первого товара изображение, чтобы добавить его к сообщению
-    first_item = cart_items[0]
-    first_product = first_item['product']
+    # Создаем клавиатуру с кнопкой "Оплатить все заказы"
+    keyboard = get_user_orders_menu(orders_for_keyboard, has_pay_all_button=True)
     
-    # Проверяем маркетплейс товара
-    if first_product.marketplace == 'wildberries':
-        # Для Wildberries не отправляем изображения
-        await callback_query.message.edit_text(
-            cart_text,
-            reply_markup=get_back_menu(),
-            parse_mode='HTML'
-        )
-    elif first_product.image_url:
-        try:
-            # Отладочная информация перед отправкой изображения
-            print(f"Пытаемся отправить изображение корзины: {first_product.image_url}")
-            print(f"Тип URL изображения корзины: {type(first_product.image_url)}")
-            print(f"Длина URL изображения корзины: {len(first_product.image_url) if first_product.image_url else 0}")
-            
-            # Отправляем новое сообщение с изображением
-            await callback_query.message.delete()  # Удаляем предыдущее сообщение
-            await callback_query.message.answer_photo(
-                photo=first_product.image_url,
-                caption=cart_text,
-                reply_markup=get_back_menu(),
-                parse_mode='HTML'
-            )
-        except Exception as e:
-            # В случае ошибки отправляем только текст
-            print(f"Ошибка при отправке изображения товара: {e}")
-            print(f"Детали ошибки корзины: {str(e)}, тип ошибки: {type(e)}")
-            await callback_query.message.edit_text(
-                cart_text,
-                reply_markup=get_back_menu(),
-                parse_mode='HTML'
-            )
-    else:
-        # Если у первого товара нет изображения, отправляем только текст
-        await callback_query.message.edit_text(
-            cart_text,
-            reply_markup=get_back_menu(),
-            parse_mode='HTML'
-        )
+    # Упрощаем - отправляем только текст без изображений
+    await callback_query.message.edit_text(
+        cart_text,
+        reply_markup=keyboard,
+        parse_mode='HTML'
+    )
 
 async def process_delete_order(callback_query: types.CallbackQuery):
     """Обработчик для удаления заказов."""
@@ -187,7 +162,7 @@ async def process_confirm_remove_cart_item(callback_query: types.CallbackQuery):
         )
 
 async def process_pay_orders(callback_query: types.CallbackQuery, state: FSMContext):
-    """Обработчик для перехода к оплате заказов."""
+    """Обработчик для перехода к оплате всех заказов одним платежом."""
     await callback_query.answer()
     
     user_id = callback_query.from_user.id
@@ -201,24 +176,49 @@ async def process_pay_orders(callback_query: types.CallbackQuery, state: FSMCont
         )
         return
     
-    # Рассчитываем общую стоимость
+    # Рассчитываем общую стоимость всех товаров в корзине
     total_amount = 0
-    for item in cart_items:
+    items_text = ""
+    
+    for i, item in enumerate(cart_items, 1):
         product = item['product']
         quantity = item['quantity']
-        total_amount += product.price * quantity
+        size = item['size'] or "Не указан"
+        color = item['color'] or "Не указан"
+        
+        # Расчет цены с учетом количества
+        item_price = product.price * quantity
+        total_amount += item_price
+        
+        # Получаем информацию о маркетплейсе
+        marketplace_name = {
+            'wildberries': 'Wildberries',
+            'ozon': 'Ozon',
+            'yandex_market': 'Яндекс.Маркет'
+        }.get(product.marketplace, product.marketplace)
+        
+        items_text += (
+            f"<b>{i}. {product.title}</b>\n"
+            f"Маркетплейс: {marketplace_name}\n"
+            f"Цена: {product.price} ₽ x {quantity} = {item_price} ₽\n"
+            f"Размер: {size}\n"
+            f"Цвет: {color}\n\n"
+        )
     
     # Сохраняем данные о заказе в состояние
     await state.update_data(
         cart_items=cart_items,
         total_amount=total_amount,
-        delivery_address=DEFAULT_DELIVERY_ADDRESS
+        delivery_address=DEFAULT_DELIVERY_ADDRESS,  # Гарантируем, что адрес всегда установлен
+        is_combined_order=True  # Флаг, указывающий, что это объединенный заказ
     )
     
     payment_text = (
-        f"💰 <b>Оплата заказа</b>\n\n"
-        f"Общая стоимость: {total_amount} ₽\n"
-        f"Адрес доставки: {DEFAULT_DELIVERY_ADDRESS}\n\n"
+        f"💰 <b>Объединенная оплата заказов</b>\n\n"
+        f"<b>Товары в корзине:</b>\n\n"
+        f"{items_text}"
+        f"<b>Общая стоимость:</b> {total_amount} ₽\n"
+        f"<b>Адрес доставки:</b> {DEFAULT_DELIVERY_ADDRESS}\n\n"
         f"Выберите способ оплаты:"
     )
     
@@ -240,7 +240,8 @@ async def process_payment_method(callback_query: types.CallbackQuery, state: FSM
     
     # Получаем данные о заказе из состояния
     data = await state.get_data()
-    delivery_address = data.get('delivery_address')
+    delivery_address = data.get('delivery_address', DEFAULT_DELIVERY_ADDRESS)  # Гарантируем значение по умолчанию
+    is_combined_order = data.get('is_combined_order', False)  # Проверяем, это объединенный заказ или отдельный
     
     # Создаем заказ
     user_id = callback_query.from_user.id
@@ -251,15 +252,39 @@ async def process_payment_method(callback_query: types.CallbackQuery, state: FSM
     )
     
     if order_id:
+        payment_info = ""
+        from admin.notification import MANAGER_NAME
+        manager_username = f"@{MANAGER_NAME}"
+        
+        # Формируем информацию о платеже в зависимости от выбранного метода
+        if payment_method == "mir":
+            payment_info = (
+                "💳 <b>Оплата картой МИР</b>\n\n"
+                "Номер карты: 2202 2063 9165 2067\n"
+                "Получатель: Наталья Наталья Наталья\n\n"
+                f"После оплаты нажмите кнопку «✅ Оплатил»."
+            )
+        elif payment_method == "visa_mc":
+            payment_info = (
+                "💳 <b>Оплата картой Visa/Mastercard</b>\n\n"
+                "Номер карты: 4455 6677 8899 0011\n"
+                "Получатель: Наталья Произвольная Карта\n\n"
+                f"После оплаты нажмите кнопку «✅ Оплатил»."
+            )
+        else:
+            payment_info = "Выбран неизвестный метод оплаты."
+        
+        # Добавляем сообщение для пользователя
+        payment_info += f"\n\nВаш заказ будет передан менеджеру {manager_username} после подтверждения оплаты."
+            
         # Заказ успешно создан
         await callback_query.message.edit_text(
             f"✅ <b>Заказ оформлен</b>\n\n"
             f"Номер заказа: {order_id}\n"
             f"Метод оплаты: {payment_method.upper()}\n"
             f"Адрес доставки: {delivery_address}\n\n"
-            f"<i>Это тестовый бот, оплата не производится.</i>\n"
-            f"<i>В реальном боте здесь была бы интеграция с платежной системой.</i>",
-            reply_markup=get_main_menu(),
+            f"{payment_info}",
+            reply_markup=get_payment_info_keyboard(order_id),
             parse_mode='HTML'
         )
     else:
@@ -273,6 +298,62 @@ async def process_payment_method(callback_query: types.CallbackQuery, state: FSM
     
     # Завершаем состояние
     await state.finish()
+
+async def process_paid_order(callback_query: types.CallbackQuery):
+    """Обработчик для кнопки 'Оплатил'."""
+    await callback_query.answer()
+    
+    # Получаем ID заказа из callback_data
+    order_id = int(callback_query.data.split('_')[-1])
+    
+    # Получаем данные пользователя
+    user_id = callback_query.from_user.id
+    username = callback_query.from_user.username
+    
+    # Получаем данные заказа - используем user_id из Telegram, а не из БД
+    from database.database import get_order_details, update_order_status
+    order_data = get_order_details(user_id, order_id)
+    
+    if not order_data:
+        print(f"Ошибка: Не удалось найти информацию о заказе {order_id} для пользователя {user_id}")
+        await callback_query.message.edit_text(
+            "❌ <b>Ошибка</b>\n\n"
+            "Не удалось найти информацию о заказе.",
+            reply_markup=get_cart_menu(),
+            parse_mode='HTML'
+        )
+        return
+    
+    # Обновляем статус заказа на "paid"
+    success = update_order_status(order_id, "paid")
+    if not success:
+        print(f"Ошибка: Не удалось обновить статус заказа {order_id}")
+        
+    # Отправляем информацию о заказе в чат
+    from admin.notification import send_order_to_chat
+    success = await send_order_to_chat(
+        bot=callback_query.bot,
+        user_id=user_id,
+        username=username,
+        order_data=order_data
+    )
+    
+    if success:
+        await callback_query.message.edit_text(
+            "✅ <b>Спасибо за оплату!</b>\n\n"
+            "Информация о вашем заказе отправлена менеджеру.\n"
+            "С вами свяжутся в ближайшее время для подтверждения заказа.",
+            reply_markup=get_main_menu(),
+            parse_mode='HTML'
+        )
+    else:
+        await callback_query.message.edit_text(
+            "❌ <b>Ошибка</b>\n\n"
+            "Не удалось отправить информацию о заказе.\n"
+            "Пожалуйста, свяжитесь с менеджером напрямую.",
+            reply_markup=get_main_menu(),
+            parse_mode='HTML'
+        )
 
 async def process_cancel_action(callback_query: types.CallbackQuery):
     """Обработчик для отмены действия."""
@@ -300,7 +381,11 @@ def register_cart_handlers(dp):
     dp.register_callback_query_handler(process_pay_orders, lambda c: c.data == "pay_orders")
     dp.register_callback_query_handler(
         process_payment_method,
-        lambda c: c.data in ["pay_apple", "pay_google", "pay_card"],
+        lambda c: c.data in ["pay_mir", "pay_visa_mc"],
         state=PaymentStates.waiting_for_payment_method
+    )
+    dp.register_callback_query_handler(
+        process_paid_order,
+        lambda c: c.data.startswith("paid_order_")
     )
     dp.register_callback_query_handler(process_cancel_action, lambda c: c.data == "cancel_action") 

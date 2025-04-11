@@ -1,23 +1,30 @@
-from .common import register_common_handlers
-from .cabinet import register_cabinet_handlers
-from .orders import register_order_handlers
-from .delivery import register_delivery_handlers
-from .cart import register_cart_handlers
-from .navigation import register_navigation_handlers
+"""
+Определяет маршрутизацию обработчиков сообщений в боте.
+"""
 
-def register_all_handlers(dp):
-    """Регистрация всех обработчиков."""
-    # Порядок регистрации важен!
-    # Обработчики с более высоким приоритетом (более специфичные) должны быть зарегистрированы раньше
+from aiogram import Dispatcher
+
+from handlers.common import register_common_handlers
+from handlers.navigation import register_navigation_handlers
+from handlers.orders import register_order_handlers
+from handlers.delivery import register_delivery_handlers
+from handlers.cart import register_cart_handlers
+from handlers.cabinet import register_cabinet_handlers
+
+def register_all_handlers(dp: Dispatcher):
+    """
+    Регистрирует все обработчики бота.
     
-    # Регистрация обработчиков навигации
+    Args:
+        dp: Экземпляр диспетчера бота
+    """
+    # Порядок регистрации имеет значение!
+    # Сначала регистрируем общие обработчики
+    register_common_handlers(dp)
+    
+    # Затем специфические обработчики
     register_navigation_handlers(dp)
-    
-    # Регистрация обработчиков для разделов
-    register_cabinet_handlers(dp)
     register_order_handlers(dp)
     register_delivery_handlers(dp)
     register_cart_handlers(dp)
-    
-    # Регистрация общих обработчиков
-    register_common_handlers(dp) 
+    register_cabinet_handlers(dp) 
