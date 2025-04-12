@@ -7,6 +7,11 @@ from parser.yandex_parser import YandexMarketParser
 
 def identify_marketplace(url):
     """Определить маркетплейс по URL."""
+    # Сначала пытаемся извлечь URL из текста, если пользователь отправил его с текстом
+    url_match = re.search(r'https?://\S+', url)
+    if url_match:
+        url = url_match.group(0)
+        
     if 'wildberries.ru' in url:
         return 'wildberries'
     elif 'ozon.ru' in url:
@@ -18,13 +23,18 @@ def identify_marketplace(url):
 
 def is_valid_marketplace_url(url):
     """Проверить, является ли URL действительным URL маркетплейса."""
+    # Извлекаем URL из текста, если пользователь отправил его с текстом
+    url_match = re.search(r'https?://\S+', url)
+    if url_match:
+        url = url_match.group(0)
+    
     marketplace = identify_marketplace(url)
     if marketplace:
         # Проверка на формат URL
         if marketplace == 'wildberries':
-            return bool(re.match(r'https?://www\.wildberries\.ru/.*', url))
+            return bool(re.match(r'https?://(www\.)?wildberries\.ru/.*', url))
         elif marketplace == 'ozon':
-            return bool(re.match(r'https?://www\.ozon\.ru/.*', url))
+            return bool(re.match(r'https?://(www\.)?ozon\.ru/.*', url))
         elif marketplace == 'yandex_market':
             return bool(re.match(r'https?://market\.yandex\.ru/.*', url))
     return False
@@ -203,15 +213,33 @@ def get_yandex_market_fallback(url, reason="Не удалось получить
 
 def parse_product_from_url(url):
     """Парсинг товара по URL."""
-    marketplace = identify_marketplace(url)
-    if not marketplace:
-        return None
-    
-    if marketplace == 'wildberries':
-        return parse_wildberries_product(url)
-    elif marketplace == 'ozon':
-        return parse_ozon_product(url)
-    elif marketplace == 'yandex_market':
-        return parse_yandex_market_product(url)
-    else:
-        return None 
+    try:
+        # Извлекаем URL из текста, если пользователь отправил его с текстом
+        url_match = re.search(r'https?://\S+', url)
+        if url_match:
+            url = url_match.group(0)
+        
+        marketplace = identify_marketplace(url)
+        if not marketplace:
+            return None
+        
+        if marketplace == 'wildberries':
+            return parse_wildberries_product(url)
+        elif marketplace == 'ozon':
+            return parse_ozon_product(url)
+        elif marketplace == 'yandex_market':
+            return parse_yandex_market_product(url)
+        else:
+            return None
+    except Exception as e:
+        print(f"Ошибка при парсинге URL {url}: {str(e)}")
+        return {
+            'marketplace': 'unknown',
+            'title': 'Товар не удалось обработать',
+            'description': f'Произошла ошибка при обработке товара: {str(e)}',
+            'price': 0.0,
+            'image_url': None,
+            'url': url,
+            'available_sizes': [],
+            'error': True
+        } 

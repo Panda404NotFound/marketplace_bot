@@ -3,6 +3,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.types import BotCommand
+from aiohttp import ClientTimeout
 
 from config import BOT_TOKEN
 from database import init_db
@@ -20,8 +21,11 @@ async def main():
     # Инициализируем базу данных
     init_db()
     
+    # Настраиваем таймаут для клиентской сессии
+    timeout = ClientTimeout(total=60)  # 60 секунд для общего таймаута
+    
     # Инициализируем бота и диспетчер
-    bot = Bot(token=BOT_TOKEN)
+    bot = Bot(token=BOT_TOKEN, timeout=timeout)
     storage = MemoryStorage()
     dp = Dispatcher(bot, storage=storage)
     
@@ -37,14 +41,23 @@ async def main():
     # Регистрируем все обработчики
     register_all_handlers(dp)
     
-    # Запускаем бота
+    # Запускаем бота в цикле с обработкой ошибок
     try:
         logger.info("Бот запущен")
-        await dp.start_polling()
+        while True:
+            try:
+                await dp.start_polling()
+            except asyncio.TimeoutError:
+                logger.warning("Произошел таймаут при получении обновлений. Перезапуск через 3 секунды...")
+                await asyncio.sleep(3)
+            except Exception as e:
+                logger.error(f"Произошла ошибка: {e}. Перезапуск через 3 секунды...")
+                await asyncio.sleep(3)
     finally:
         await dp.storage.close()
         await dp.storage.wait_closed()
-        await bot.session.close()
+        session = await bot.get_session()
+        await session.close()
 
 if __name__ == '__main__':
     try:

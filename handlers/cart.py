@@ -91,7 +91,7 @@ async def process_my_orders(callback_query: types.CallbackQuery):
             f"Маркетплейс: {marketplace_name}\n"
             f"Цена: {product.price} ₽ x {quantity} = {item_price} ₽\n"
             f"Размер: {size}\n"
-            f"Цвет: {color}\n\n"
+            f"Примечание: {color}\n\n"
         )
         
         # Добавляем товар для клавиатуры
@@ -232,7 +232,7 @@ async def process_pay_orders(callback_query: types.CallbackQuery, state: FSMCont
             f"Маркетплейс: {marketplace_name}\n"
             f"Цена: {product.price} ₽ x {quantity} = {item_price} ₽\n"
             f"Размер: {size}\n"
-            f"Цвет: {color}\n\n"
+            f"Примечание: {color}\n\n"
         )
     
     # Сохраняем данные о заказе в состояние

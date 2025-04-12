@@ -45,21 +45,34 @@ class YandexMarketParser:
     
     def get_page_content(self, url):
         """Получить HTML-контент страницы."""
-        try:
-            # Получаем новый случайный заголовок для каждого запроса
-            headers = self.get_random_headers()
-            
-            # Выполняем запрос
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            
-            # Устанавливаем кодировку
-            response.encoding = 'utf-8'
-            
-            return response.text
-        except requests.RequestException as e:
-            print(f"Ошибка при получении страницы: {e}")
-            return None
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                # Получаем новый случайный заголовок для каждого запроса
+                headers = self.get_random_headers()
+                
+                # Выполняем запрос с увеличенным таймаутом
+                response = requests.get(url, headers=headers, timeout=30)
+                response.raise_for_status()
+                
+                # Устанавливаем кодировку
+                response.encoding = 'utf-8'
+                
+                return response.text
+            except requests.Timeout:
+                retry_count += 1
+                if retry_count < max_retries:
+                    delay = random.uniform(2, 5)
+                    print(f"Произошел таймаут при запросе к {url}. Повторная попытка {retry_count}/{max_retries} через {delay:.2f} секунд...")
+                    time.sleep(delay)
+                else:
+                    print(f"Превышено максимальное количество попыток при запросе к {url}")
+                    return None
+            except requests.RequestException as e:
+                print(f"Ошибка при получении страницы: {e}")
+                return None
     
     def get_marketplace_name(self):
         """Получить название маркетплейса."""

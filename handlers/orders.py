@@ -1,6 +1,8 @@
 from aiogram import types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
+import re
+import asyncio
 
 from database.database import create_product_from_url, add_to_cart, get_user
 from utils.marketplace_parser import parse_product_from_url, is_valid_marketplace_url
@@ -37,168 +39,205 @@ async def process_new_order(callback_query: types.CallbackQuery, state: FSMConte
 
 async def process_product_url(message: types.Message, state: FSMContext):
     """Обработчик URL товара."""
-    url = message.text.strip()
-    
-    # Проверяем, является ли URL действительным URL маркетплейса
-    if not is_valid_marketplace_url(url):
-        await message.answer(
-            "❌ Некорректная ссылка. Пожалуйста, убедитесь, что вы отправили правильную ссылку "
-            "на товар из Wildberries, Ozon или Яндекс Маркета.",
-            reply_markup=get_main_menu()
-        )
-        # Сбрасываем состояние
-        await state.finish()
-        return
-    
-    # Проверяем, является ли ссылка на Ozon и выводим специальное сообщение
-    if 'ozon.ru' in url.lower():
-        await message.answer(
-            "⚠️ <b>Маркетплейс Ozon временно не поддерживается</b>\n\n"
-            "В настоящий момент функциональность для Ozon находится в разработке.\n"
-            "Пожалуйста, используйте товары из Wildberries или Яндекс.Маркет.",
-            parse_mode='HTML',
-            reply_markup=get_main_menu()
-        )
-        # Сбрасываем состояние
-        await state.finish()
-        return
-    
-    # Отправляем сообщение о процессе парсинга
-    wait_message = await message.answer("⏳ Получаем информацию о товаре...")
-    
-    # Получаем информацию о товаре по URL
-    product_info = parse_product_from_url(url)
-    
-    # Удаляем сообщение о ожидании
-    await wait_message.delete()
-    
-    if not product_info:
-        await message.answer(
-            "❌ Не удалось получить информацию о товаре. "
-            "Пожалуйста, проверьте ссылку и попробуйте снова.",
-            reply_markup=get_main_menu()
-        )
-        # Сбрасываем состояние
-        await state.finish()
-        return
-    
-    # Проверяем наличие ошибки (добавлено для обработки капчи и других ошибок)
-    if product_info.get('error', False) or product_info.get('price', 0.0) == 0.0:
-        # Формируем тип ошибки в зависимости от наличия описания капчи
-        if "капча" in product_info.get('description', '').lower() or "captcha" in product_info.get('description', '').lower():
-            error_text = "❌ Товар не найден. Пожалуйста, попробуйте еще раз...."
-        else:
-            error_text = f"❌ Не удалось получить корректную информацию о товаре. {product_info.get('description', 'Пожалуйста, проверьте ссылку и попробуйте снова.')}"
-            
-        await message.answer(
-            error_text,
-            reply_markup=get_main_menu()
-        )
-        # Сбрасываем состояние, чтобы бот не ждал повторного ввода URL
-        await state.finish()
-        return
-    
-    # Сохраняем информацию о товаре в состояние
-    await state.update_data(
-        product_url=url,
-        product_info=product_info
-    )
-    
-    # Создаем товар в базе данных
-    product_id = create_product_from_url(
-        url=url,
-        marketplace=product_info['marketplace'],
-        title=product_info['title'],
-        price=product_info['price'],
-        description=product_info.get('description'),
-        image_url=product_info.get('image_url')
-    )
-    
-    # Сохраняем ID товара в состояние
-    await state.update_data(product_id=product_id)
-    
-    # Формируем текст о товаре
-    marketplace_name = {
-        'wildberries': 'Wildberries',
-        'ozon': 'Ozon',
-        'yandex_market': 'Яндекс.Маркет'
-    }.get(product_info['marketplace'], product_info['marketplace'])
-    
-    product_text = (
-        f"✅ <b>Товар найден</b>\n\n"
-        f"<b>{product_info['title']}</b>\n"
-        f"Маркетплейс: {marketplace_name}\n"
-        f"Цена: {product_info['price']} ₽\n\n"
-    )
-    
-    # Добавляем информацию о доступных размерах, если есть
-    if 'available_sizes' in product_info and product_info['available_sizes']:
-        size_text = "📏 <b>Доступные размеры:</b>\n"
-        for size in product_info['available_sizes'][:5]:  # Ограничиваем количество отображаемых размеров
-            if isinstance(size, dict):
-                size_name = size.get('name', '')
-                orig_name = size.get('origName', '')
-                size_display = f"{size_name}" if not orig_name else f"{size_name} ({orig_name})"
-                size_text += f"- {size_display}\n"
-                
-                # Добавляем информацию о цветах, если есть
-                if 'colors' in size and size['colors']:
-                    size_text += "  Доступные цвета:\n"
-                    for color in size['colors'][:3]:  # Ограничиваем количество отображаемых цветов
-                        size_text += f"  • {color}\n"
+    try:
+        url = message.text.strip()
         
-        # Если размеров больше 5, добавляем информацию об этом
-        if len(product_info['available_sizes']) > 5:
-            size_text += f"...и еще {len(product_info['available_sizes']) - 5} размеров\n"
+        # Извлекаем URL из текста, если пользователь отправил его с текстом
+        url_match = re.search(r'https?://\S+', url)
+        if url_match:
+            url = url_match.group(0)
         
-        product_text += size_text + "\n"
-    
-    # Проверяем маркетплейс товара
-    if product_info.get('marketplace') == 'wildberries':
-        # Для Wildberries не отправляем изображения
-        await message.answer(
-            product_text,
-            parse_mode='HTML'
-        )
-    # Для других маркетплейсов сохраняем прежнюю логику
-    elif product_info.get('image_url'):
-        try:
-            # Добавляем отладочное сообщение перед отправкой изображения
-            print(f"Пытаемся отправить изображение: {product_info['image_url']}")
-            print(f"Тип URL изображения: {type(product_info['image_url'])}")
-            print(f"Длина URL изображения: {len(product_info['image_url']) if product_info['image_url'] else 0}")
-            
-            # Отправляем изображение с текстом
-            await message.answer_photo(
-                photo=product_info['image_url'],
-                caption=product_text,
-                parse_mode='HTML'
+        # Проверяем, является ли URL действительным URL маркетплейса
+        if not is_valid_marketplace_url(url):
+            await message.answer(
+                "❌ Некорректная ссылка. Пожалуйста, убедитесь, что вы отправили правильную ссылку "
+                "на товар из Wildberries, Ozon или Яндекс Маркета.",
+                reply_markup=get_main_menu()
             )
-        except Exception as e:
-            # Если не удалось отправить изображение, отправляем только текст
-            print(f"Ошибка при отправке изображения: {e}")
-            print(f"Детали ошибки: {str(e)}, тип ошибки: {type(e)}")
+            # Сбрасываем состояние
+            await state.finish()
+            return
+        
+        # Проверяем, является ли ссылка на Ozon и выводим специальное сообщение
+        if 'ozon.ru' in url.lower():
+            await message.answer(
+                "⚠️ <b>Маркетплейс Ozon временно не поддерживается</b>\n\n"
+                "В настоящий момент функциональность для Ozon находится в разработке.\n"
+                "Пожалуйста, используйте товары из Wildberries или Яндекс.Маркет.",
+                parse_mode='HTML',
+                reply_markup=get_main_menu()
+            )
+            # Сбрасываем состояние
+            await state.finish()
+            return
+        
+        # Отправляем сообщение о процессе парсинга
+        wait_message = await message.answer("⏳ Получаем информацию о товаре...")
+        
+        try:
+            # Получаем информацию о товаре по URL с таймаутом
+            product_info = parse_product_from_url(url)
             
+            # Удаляем сообщение о ожидании
+            await wait_message.delete()
+            
+            if not product_info:
+                await message.answer(
+                    "❌ Не удалось получить информацию о товаре. "
+                    "Пожалуйста, проверьте ссылку и попробуйте снова.",
+                    reply_markup=get_main_menu()
+                )
+                # Сбрасываем состояние
+                await state.finish()
+                return
+            
+            # Проверяем наличие ошибки (добавлено для обработки капчи и других ошибок)
+            if product_info.get('error', False) or product_info.get('price', 0.0) == 0.0:
+                # Формируем тип ошибки в зависимости от наличия описания капчи
+                if "капча" in product_info.get('description', '').lower() or "captcha" in product_info.get('description', '').lower():
+                    error_text = "❌ Товар не найден. Пожалуйста, попробуйте еще раз...."
+                else:
+                    error_text = f"❌ Не удалось получить корректную информацию о товаре. {product_info.get('description', 'Пожалуйста, проверьте ссылку и попробуйте снова.')}"
+                    
+                await message.answer(
+                    error_text,
+                    reply_markup=get_main_menu()
+                )
+                # Сбрасываем состояние, чтобы бот не ждал повторного ввода URL
+                await state.finish()
+                return
+        except asyncio.TimeoutError:
+            # В случае таймаута при парсинге
+            await wait_message.delete()
+            await message.answer(
+                "⌛ Превышено время ожидания при получении информации о товаре. "
+                "Пожалуйста, попробуйте позже или используйте другую ссылку.",
+                reply_markup=get_main_menu()
+            )
+            await state.finish()
+            return
+        except Exception as e:
+            # Обработка других исключений
+            print(f"Ошибка при парсинге товара: {str(e)}")
+            await wait_message.delete()
+            await message.answer(
+                "❌ Произошла ошибка при обработке товара. "
+                "Пожалуйста, попробуйте позже или используйте другую ссылку.",
+                reply_markup=get_main_menu()
+            )
+            await state.finish()
+            return
+        
+        # Сохраняем информацию о товаре в состояние
+        await state.update_data(
+            product_url=url,
+            product_info=product_info
+        )
+        
+        # Создаем товар в базе данных
+        product_id = create_product_from_url(
+            url=url,
+            marketplace=product_info['marketplace'],
+            title=product_info['title'],
+            price=product_info['price'],
+            description=product_info.get('description'),
+            image_url=product_info.get('image_url')
+        )
+        
+        # Сохраняем ID товара в состояние
+        await state.update_data(product_id=product_id)
+        
+        # Формируем текст о товаре
+        marketplace_name = {
+            'wildberries': 'Wildberries',
+            'ozon': 'Ozon',
+            'yandex_market': 'Яндекс.Маркет'
+        }.get(product_info['marketplace'], product_info['marketplace'])
+        
+        product_text = (
+            f"✅ <b>Товар найден</b>\n\n"
+            f"<b>{product_info['title']}</b>\n"
+            f"Маркетплейс: {marketplace_name}\n"
+            f"Цена: {product_info['price']} ₽\n\n"
+        )
+        
+        # Добавляем информацию о доступных размерах, если есть
+        if 'available_sizes' in product_info and product_info['available_sizes']:
+            size_text = "📏 <b>Доступные размеры:</b>\n"
+            for size in product_info['available_sizes'][:5]:  # Ограничиваем количество отображаемых размеров
+                if isinstance(size, dict):
+                    size_name = size.get('name', '')
+                    orig_name = size.get('origName', '')
+                    size_display = f"{size_name}" if not orig_name else f"{size_name} ({orig_name})"
+                    size_text += f"- {size_display}\n"
+                    
+                    # Добавляем информацию о цветах, если есть
+                    if 'colors' in size and size['colors']:
+                        size_text += "  Доступные цвета:\n"
+                        for color in size['colors'][:3]:  # Ограничиваем количество отображаемых цветов
+                            size_text += f"  • {color}\n"
+        
+            # Если размеров больше 5, добавляем информацию об этом
+            if len(product_info['available_sizes']) > 5:
+                size_text += f"...и еще {len(product_info['available_sizes']) - 5} размеров\n"
+            
+            product_text += size_text + "\n"
+        
+        # Проверяем маркетплейс товара
+        if product_info.get('marketplace') == 'wildberries':
+            # Для Wildberries не отправляем изображения
             await message.answer(
                 product_text,
                 parse_mode='HTML'
             )
-    else:
-        # Если у товара нет изображения, отправляем только текст
+        # Для других маркетплейсов сохраняем прежнюю логику
+        elif product_info.get('image_url'):
+            try:
+                # Добавляем отладочное сообщение перед отправкой изображения
+                print(f"Пытаемся отправить изображение: {product_info['image_url']}")
+                print(f"Тип URL изображения: {type(product_info['image_url'])}")
+                print(f"Длина URL изображения: {len(product_info['image_url']) if product_info['image_url'] else 0}")
+                
+                # Отправляем изображение с текстом
+                await message.answer_photo(
+                    photo=product_info['image_url'],
+                    caption=product_text,
+                    parse_mode='HTML'
+                )
+            except Exception as e:
+                # Если не удалось отправить изображение, отправляем только текст
+                print(f"Ошибка при отправке изображения: {e}")
+                print(f"Детали ошибки: {str(e)}, тип ошибки: {type(e)}")
+                
+                await message.answer(
+                    product_text,
+                    parse_mode='HTML'
+                )
+        else:
+            # Если у товара нет изображения, отправляем только текст
+            await message.answer(
+                product_text,
+                parse_mode='HTML'
+            )
+        
+        # Отдельное сообщение для запроса количества товара с клавиатурой
         await message.answer(
-            product_text,
+            "<b>Укажите количество товара:</b>",
+            reply_markup=get_quantity_keyboard(),
             parse_mode='HTML'
         )
-    
-    # Отдельное сообщение для запроса количества товара с клавиатурой
-    await message.answer(
-        "<b>Укажите количество товара:</b>",
-        reply_markup=get_quantity_keyboard(),
-        parse_mode='HTML'
-    )
-    
-    # Переходим к следующему этапу - указанию количества
-    await OrderStates.waiting_for_quantity.set()
+        
+        # Переходим к следующему этапу - указанию количества
+        await OrderStates.waiting_for_quantity.set()
+    except Exception as e:
+        # Обработка других исключений
+        print(f"Ошибка при обработке URL товара: {str(e)}")
+        await message.answer(
+            "❌ Произошла ошибка при обработке URL товара. "
+            "Пожалуйста, попробуйте позже или используйте другую ссылку.",
+            reply_markup=get_main_menu()
+        )
+        await state.finish()
 
 async def process_quantity_selection(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик для выбора количества товара через inline-клавиатуру."""
@@ -409,106 +448,145 @@ async def process_color_selection(callback_query: types.CallbackQuery, state: FS
 
 async def add_product_to_cart(message, state, user_id, notes=None):
     """Функция для добавления товара в корзину."""
-    # Получаем все данные из состояния
-    data = await state.get_data()
-    product_id = data.get('product_id')
-    product_info = data.get('product_info')
-    quantity = data.get('quantity')
-    size = data.get('size')
-    
-    # Добавляем товар в корзину
-    success = add_to_cart(user_id, product_id, quantity, size, notes)
-    
-    if success:
-        # Формируем текст о добавлении товара в корзину
-        cart_text = (
-            f"✅ <b>Товар добавлен в корзину</b>\n\n"
-            f"<b>{product_info['title']}</b>\n"
-            f"Цена: {product_info['price']} ₽\n"
-            f"Количество: {quantity}\n"
-        )
+    try:
+        # Получаем все данные из состояния
+        data = await state.get_data()
+        product_id = data.get('product_id')
+        product_info = data.get('product_info')
+        quantity = data.get('quantity')
+        size = data.get('size')
         
-        if size:
-            cart_text += f"Размер: {size}\n"
+        # Добавляем товар в корзину
+        success = add_to_cart(user_id, product_id, quantity, size, notes)
         
-        if notes:
-            cart_text += f"Примечания: {notes}\n"
-        
-        # Расчет итоговой суммы с явным преобразованием в число
-        try:
-            price = float(product_info['price'])
-            total_price = price * quantity
-            cart_text += f"\n<b>Итоговая сумма:</b> {total_price:.2f} ₽\n\n"
-        except (ValueError, TypeError):
-            # Если не удалось преобразовать цену в число, выводим сообщение
-            cart_text += f"\n<b>Итоговая сумма:</b> Не удалось рассчитать\n\n"
-        
-        cart_text += "Вы можете продолжить покупки или перейти в корзину."
-        
-        # Проверяем тип сообщения
-        if hasattr(message, 'edit_text'):  # Это callback_query.message
+        if success:
+            # Формируем текст о добавлении товара в корзину
+            cart_text = (
+                f"✅ <b>Товар добавлен в корзину</b>\n\n"
+                f"<b>{product_info['title']}</b>\n"
+                f"Цена: {product_info['price']} ₽\n"
+                f"Количество: {quantity}\n"
+            )
+            
+            if size:
+                cart_text += f"Размер: {size}\n"
+            
+            if notes:
+                cart_text += f"Примечание: {notes}\n"
+            
+            # Расчет итоговой суммы с явным преобразованием в число
             try:
-                await message.edit_text(
-                    cart_text,
-                    reply_markup=get_main_menu(),
-                    parse_mode='HTML'
-                )
-            except Exception:
-                # Если не удалось отредактировать сообщение, отправляем новое
-                bot = message.bot
-                await bot.send_message(
-                    chat_id=user_id,
-                    text=cart_text,
-                    reply_markup=get_main_menu(),
-                    parse_mode='HTML'
-                )
-        else:  # Это обычное message
-            # Проверяем маркетплейс товара
-            if product_info.get('marketplace') == 'wildberries' or not product_info.get('image_url'):
-                # Для Wildberries или товаров без изображения отправляем только текст
-                await message.answer(
-                    cart_text,
-                    reply_markup=get_main_menu(),
-                    parse_mode='HTML'
-                )
-            else:
-                # Для товаров с изображением пробуем отправить фото
+                price = float(product_info['price'])
+                total_price = price * quantity
+                cart_text += f"\n<b>Итоговая сумма:</b> {total_price:.2f} ₽\n\n"
+            except (ValueError, TypeError):
+                # Если не удалось преобразовать цену в число, выводим сообщение
+                cart_text += f"\n<b>Итоговая сумма:</b> Не удалось рассчитать\n\n"
+            
+            cart_text += "Вы можете продолжить покупки или перейти в корзину."
+            
+            # Проверяем тип сообщения
+            if hasattr(message, 'edit_text'):  # Это callback_query.message
                 try:
-                    await message.answer_photo(
-                        photo=product_info['image_url'],
-                        caption=cart_text,
+                    await message.edit_text(
+                        cart_text,
                         reply_markup=get_main_menu(),
                         parse_mode='HTML'
                     )
-                except Exception:
-                    # Если не удалось отправить изображение, отправляем только текст
+                except Exception as e:
+                    print(f"Ошибка при редактировании сообщения: {str(e)}")
+                    # Если не удалось отредактировать сообщение, отправляем новое
+                    bot = message.bot
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text=cart_text,
+                        reply_markup=get_main_menu(),
+                        parse_mode='HTML'
+                    )
+            else:  # Это обычное message
+                # Проверяем маркетплейс товара
+                if product_info.get('marketplace') == 'wildberries' or not product_info.get('image_url'):
+                    # Для Wildberries или товаров без изображения отправляем только текст
                     await message.answer(
                         cart_text,
                         reply_markup=get_main_menu(),
                         parse_mode='HTML'
                     )
-    else:
-        # Обработка ошибки в зависимости от типа сообщения
-        error_text = "❌ Произошла ошибка при добавлении товара в корзину. Пожалуйста, попробуйте снова."
+                else:
+                    # Для товаров с изображением пробуем отправить фото
+                    try:
+                        await message.answer_photo(
+                            photo=product_info['image_url'],
+                            caption=cart_text,
+                            reply_markup=get_main_menu(),
+                            parse_mode='HTML'
+                        )
+                    except asyncio.TimeoutError:
+                        # В случае таймаута отправляем только текст
+                        print("Таймаут при отправке изображения товара")
+                        await message.answer(
+                            cart_text + "\n\n⚠️ Изображение не удалось загрузить из-за таймаута.",
+                            reply_markup=get_main_menu(),
+                            parse_mode='HTML'
+                        )
+                    except Exception as e:
+                        # Если не удалось отправить изображение, отправляем только текст
+                        print(f"Ошибка при отправке изображения: {str(e)}")
+                        await message.answer(
+                            cart_text,
+                            reply_markup=get_main_menu(),
+                            parse_mode='HTML'
+                        )
+        else:
+            # Обработка ошибки в зависимости от типа сообщения
+            error_text = "❌ Произошла ошибка при добавлении товара в корзину. Пожалуйста, попробуйте снова."
+            
+            if hasattr(message, 'edit_text'):  # Это callback_query.message
+                try:
+                    await message.edit_text(
+                        error_text,
+                        reply_markup=get_main_menu()
+                    )
+                except Exception as e:
+                    print(f"Ошибка при редактировании сообщения об ошибке: {str(e)}")
+                    bot = message.bot
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text=error_text,
+                        reply_markup=get_main_menu()
+                    )
+            else:  # Это обычное message
+                await message.answer(
+                    error_text,
+                    reply_markup=get_main_menu()
+                )
+    except Exception as e:
+        # Обработка любых других ошибок
+        print(f"Непредвиденная ошибка при добавлении товара в корзину: {str(e)}")
+        error_text = "❌ Произошла непредвиденная ошибка. Пожалуйста, попробуйте снова позже."
         
-        if hasattr(message, 'edit_text'):  # Это callback_query.message
-            try:
+        try:
+            if hasattr(message, 'edit_text'):  # Это callback_query.message
                 await message.edit_text(
                     error_text,
                     reply_markup=get_main_menu()
                 )
-            except Exception:
+            else:  # Это обычное message
+                await message.answer(
+                    error_text,
+                    reply_markup=get_main_menu()
+                )
+        except:
+            # Последняя попытка отправить сообщение об ошибке
+            try:
                 bot = message.bot
                 await bot.send_message(
                     chat_id=user_id,
                     text=error_text,
                     reply_markup=get_main_menu()
                 )
-        else:  # Это обычное message
-            await message.answer(
-                error_text,
-                reply_markup=get_main_menu()
-            )
+            except:
+                pass
     
     # Завершаем состояние
     await state.finish()

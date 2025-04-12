@@ -68,7 +68,7 @@ def get_product_info_from_card_api(nm_id):
                 'Referer': f'https://www.wildberries.ru/catalog/{nm_id}/detail.aspx'
             }
             
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, headers=headers, timeout=30)
             print(f"Код ответа Card API: {response.status_code}")
             
             if response.status_code == 200:
