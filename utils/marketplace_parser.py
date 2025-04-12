@@ -79,10 +79,12 @@ def parse_wildberries_product(url):
         
         # Обработка цены
         try:
-            if 'priceU' in product_info:
-                result['price'] = product_info['priceU'] / 100
-            elif 'salePriceU' in product_info:
+            if 'salePriceU' in product_info:
+                # Используем акционную цену (со скидкой), если она есть
                 result['price'] = product_info['salePriceU'] / 100
+            elif 'priceU' in product_info:
+                # Если нет акционной цены, используем обычную цену
+                result['price'] = product_info['priceU'] / 100
             else:
                 result['price'] = 0
         except Exception as price_error:
@@ -130,17 +132,18 @@ def parse_ozon_product(url):
     """
     Парсинг товара с Ozon.
     
-    TODO: Пока что заглушка, будет реализована позже.
+    TODO: Функциональность для Ozon находится в разработке.
     """
-    # Заглушка
+    # Заглушка с указанием о недоступности маркетплейса
     return {
         'marketplace': 'ozon',
         'title': 'Товар с Ozon',
-        'description': 'Описание товара с Ozon (заглушка)',
-        'price': 1500.0,
+        'description': 'Магазин Ozon временно не поддерживается. Пожалуйста, используйте другие маркетплейсы.',
+        'price': 0.0,
         'image_url': None,
         'url': url,
-        'available_sizes': []
+        'available_sizes': [],
+        'error': True  # Флаг ошибки для блокировки оформления
     }
 
 def parse_yandex_market_product(url):
@@ -163,7 +166,7 @@ def parse_yandex_market_product(url):
             
         if result.get('captcha_detected'):
             print("Обнаружена капча на странице Яндекс.Маркета")
-            return get_yandex_market_fallback(url, "Сайт Яндекс.Маркета запрашивает капчу")
+            return get_yandex_market_fallback(url, "Товар не найден, попробуйте еще раз...")
             
         if result.get('error'):
             print("Произошла ошибка при парсинге Яндекс.Маркета")
@@ -194,7 +197,8 @@ def get_yandex_market_fallback(url, reason="Не удалось получить
         'price': 0.0,
         'image_url': None,
         'url': url,
-        'available_sizes': []
+        'available_sizes': [],
+        'error': True  # Добавляем флаг ошибки
     }
 
 def parse_product_from_url(url):

@@ -341,7 +341,8 @@ def get_order_details(user_id, order_id):
                     'product': {
                         'title': название товара,
                         'price': цена товара,
-                        'marketplace': маркетплейс
+                        'marketplace': маркетплейс,
+                        'url': URL товара
                     },
                     'quantity': количество,
                     'size': размер,
@@ -397,7 +398,8 @@ def get_order_details(user_id, order_id):
                 'product': {
                     'title': product.title,
                     'price': product.price,
-                    'marketplace': product.marketplace
+                    'marketplace': product.marketplace,
+                    'url': product.url
                 },
                 'quantity': item.quantity,
                 'size': item.size,

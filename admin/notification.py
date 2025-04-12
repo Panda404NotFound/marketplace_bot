@@ -56,7 +56,7 @@ async def send_order_to_chat(bot: Bot, user_id: int, username: Optional[str], or
         # Получаем статус заказа
         status = order_data.get('status', 'paid')
         status_display = {
-            'new': 'Ожидает оплаты',
+            'new': 'Ожидает подтверждения',
             'paid': 'Оплачен',
             'shipped': 'Отправлен',
             'delivered': 'Доставлен',
@@ -76,7 +76,8 @@ async def send_order_to_chat(bot: Bot, user_id: int, username: Optional[str], or
                 product = item['product']
                 quantity = item['quantity']
                 size = item['size'] or "Не указан"
-                color = item['color'] or "Не указан"
+                color = item['color'] or "Не указаны"
+                product_url = product.get('url', '')
                 
                 # Получаем информацию о маркетплейсе
                 marketplace = product.get('marketplace', '').lower()
@@ -91,12 +92,19 @@ async def send_order_to_chat(bot: Bot, user_id: int, username: Optional[str], or
                 item_price = product_price * quantity
                 total_amount += item_price
                 
+                # Формируем название товара со ссылкой, если URL доступен
+                product_title = product.get('title', 'Без названия')
+                if product_url:
+                    product_title_with_link = f'<a href="{product_url}">{product_title}</a>'
+                else:
+                    product_title_with_link = f'<b>{product_title}</b>'
+                
                 message_text += (
-                    f"{i}. <b>{product.get('title', 'Без названия')}</b>\n"
+                    f"{i}. {product_title_with_link}\n"
                     f"   Маркетплейс: {marketplace_name}\n"
                     f"   Цена: {product_price} ₽ x {quantity} = {item_price} ₽\n"
                     f"   Размер: {size}\n"
-                    f"   Цвет: {color}\n\n"
+                    f"   Примечания: {color}\n\n"
                 )
             except Exception as item_error:
                 print(f"Ошибка при обработке товара: {item_error}")
@@ -104,11 +112,12 @@ async def send_order_to_chat(bot: Bot, user_id: int, username: Optional[str], or
         
         message_text += f"<b>Итого:</b> {total_amount} ₽\n\n"
         
-        # Отправляем сообщение в чат
+        # Отправляем сообщение в чат с отключенным предпросмотром ссылок
         await bot.send_message(
             chat_id=CHAT_ID,
             text=message_text,
-            parse_mode='HTML'
+            parse_mode='HTML',
+            disable_web_page_preview=True
         )
         
         return True

@@ -147,8 +147,12 @@ class YandexMarketParser:
                             result['image_url'] = data['image'][0]
                         else:
                             result['image_url'] = data['image']
-                    if 'offers' in data and 'price' in data['offers']:
-                        result['price'] = data['offers']['price']
+                    # Проверяем наличие акционной цены в JSON-LD
+                    if 'offers' in data:
+                        if 'lowPrice' in data['offers']:  # Самая низкая цена в предложениях
+                            result['price'] = data['offers']['lowPrice']
+                        elif 'price' in data['offers']:  # Обычная цена
+                            result['price'] = data['offers']['price']
                     if 'description' in data:
                         result['description'] = data['description']
                     break
@@ -185,26 +189,52 @@ class YandexMarketParser:
         
         # Если цена не найдена, ищем в HTML
         if not result['price']:
-            price_selectors = [
-                'span[data-auto="price-value"]',
-                '.price-value',
-                '.price_value',
-                'span._1f9xN',
-                'span._3NaXx._3kWlK',
-                'div[data-tid="c3eacd93"]',
-                'span[data-auto="mainPrice"]'
+            # Сначала ищем акционную цену
+            discount_price_selectors = [
+                'span[data-auto="offer-price-value"]',
+                '.Price-root_discount',
+                'span.Price_role_discount',
+                'span._3NaXx._33ZFz',
+                'span[data-auto="price-value"].Price_discount',
+                'span[data-tid="c3eacd93"].Price_discount'
             ]
             
-            for selector in price_selectors:
+            # Проверяем селекторы со скидочной ценой
+            for selector in discount_price_selectors:
                 price_element = soup.select_one(selector)
                 if price_element:
                     try:
                         # Удаление всех нецифровых символов, кроме точки
                         price_text = re.sub(r'[^\d.]', '', price_element.text.replace(',', '.'))
                         result['price'] = float(price_text)
+                        print(f"Найдена акционная цена: {result['price']}")
+                        break
                     except (ValueError, TypeError):
                         pass
-                    break
+            
+            # Если акционная цена не найдена, ищем обычную цену
+            if not result['price']:
+                price_selectors = [
+                    'span[data-auto="price-value"]',
+                    '.price-value',
+                    '.price_value',
+                    'span._1f9xN',
+                    'span._3NaXx._3kWlK',
+                    'div[data-tid="c3eacd93"]',
+                    'span[data-auto="mainPrice"]'
+                ]
+                
+                for selector in price_selectors:
+                    price_element = soup.select_one(selector)
+                    if price_element:
+                        try:
+                            # Удаление всех нецифровых символов, кроме точки
+                            price_text = re.sub(r'[^\d.]', '', price_element.text.replace(',', '.'))
+                            result['price'] = float(price_text)
+                            print(f"Найдена обычная цена: {result['price']}")
+                            break
+                        except (ValueError, TypeError):
+                            pass
         
         # Если описание не найдено, ищем в HTML
         if not result['description']:

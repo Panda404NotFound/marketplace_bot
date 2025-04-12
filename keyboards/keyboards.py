@@ -323,4 +323,49 @@ def get_color_keyboard(colors):
         InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
     )
     
+    return keyboard
+
+# Клавиатура для пропуска выбора цвета
+def get_skip_color_keyboard():
+    """Создать клавиатуру для пропуска выбора цвета."""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton("⏭️ Пропустить", callback_data="color_none"),
+        InlineKeyboardButton("✏️ Ввести вручную", callback_data="color_manual")
+    )
+    # Добавляем кнопки "Назад" и "Главное меню"
+    keyboard.row(
+        InlineKeyboardButton("◀️ Назад", callback_data="back"),
+        InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
+    )
+    return keyboard
+
+# Клавиатура для пропуска выбора размера
+def get_skip_size_keyboard():
+    """Создать клавиатуру для пропуска выбора размера."""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton("⏭️ Пропустить", callback_data="size_none"),
+        InlineKeyboardButton("✏️ Ввести вручную", callback_data="size_manual")
+    )
+    # Добавляем кнопки "Назад" и "Главное меню"
+    keyboard.row(
+        InlineKeyboardButton("◀️ Назад", callback_data="back"),
+        InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
+    )
+    return keyboard
+
+# Клавиатура для примечаний к товару
+def get_notes_keyboard():
+    """Создать клавиатуру для ввода примечаний к товару."""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton("⏭️ Пропустить", callback_data="color_none"),
+        InlineKeyboardButton("✏️ Ввести примечание", callback_data="color_manual")
+    )
+    # Добавляем кнопки "Назад" и "Главное меню"
+    keyboard.row(
+        InlineKeyboardButton("◀️ Назад", callback_data="back"),
+        InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
+    )
     return keyboard 

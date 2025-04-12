@@ -4,7 +4,11 @@ from aiogram.dispatcher.filters.state import State, StatesGroup
 
 from database.database import create_product_from_url, add_to_cart, get_user
 from utils.marketplace_parser import parse_product_from_url, is_valid_marketplace_url
-from keyboards.keyboards import get_main_menu, get_back_menu, get_quantity_keyboard, get_size_keyboard, get_color_keyboard
+from keyboards.keyboards import (
+    get_main_menu, get_back_menu, get_quantity_keyboard, get_size_keyboard, 
+    get_color_keyboard, get_skip_size_keyboard, get_skip_color_keyboard,
+    get_notes_keyboard
+)
 
 class OrderStates(StatesGroup):
     """Состояния для оформления заказа."""
@@ -39,8 +43,24 @@ async def process_product_url(message: types.Message, state: FSMContext):
     if not is_valid_marketplace_url(url):
         await message.answer(
             "❌ Некорректная ссылка. Пожалуйста, убедитесь, что вы отправили правильную ссылку "
-            "на товар из Wildberries, Ozon или Яндекс Маркета."
+            "на товар из Wildberries, Ozon или Яндекс Маркета.",
+            reply_markup=get_main_menu()
         )
+        # Сбрасываем состояние
+        await state.finish()
+        return
+    
+    # Проверяем, является ли ссылка на Ozon и выводим специальное сообщение
+    if 'ozon.ru' in url.lower():
+        await message.answer(
+            "⚠️ <b>Маркетплейс Ozon временно не поддерживается</b>\n\n"
+            "В настоящий момент функциональность для Ozon находится в разработке.\n"
+            "Пожалуйста, используйте товары из Wildberries или Яндекс.Маркет.",
+            parse_mode='HTML',
+            reply_markup=get_main_menu()
+        )
+        # Сбрасываем состояние
+        await state.finish()
         return
     
     # Отправляем сообщение о процессе парсинга
@@ -55,8 +75,27 @@ async def process_product_url(message: types.Message, state: FSMContext):
     if not product_info:
         await message.answer(
             "❌ Не удалось получить информацию о товаре. "
-            "Пожалуйста, проверьте ссылку и попробуйте снова."
+            "Пожалуйста, проверьте ссылку и попробуйте снова.",
+            reply_markup=get_main_menu()
         )
+        # Сбрасываем состояние
+        await state.finish()
+        return
+    
+    # Проверяем наличие ошибки (добавлено для обработки капчи и других ошибок)
+    if product_info.get('error', False) or product_info.get('price', 0.0) == 0.0:
+        # Формируем тип ошибки в зависимости от наличия описания капчи
+        if "капча" in product_info.get('description', '').lower() or "captcha" in product_info.get('description', '').lower():
+            error_text = "❌ Товар не найден. Пожалуйста, попробуйте еще раз...."
+        else:
+            error_text = f"❌ Не удалось получить корректную информацию о товаре. {product_info.get('description', 'Пожалуйста, проверьте ссылку и попробуйте снова.')}"
+            
+        await message.answer(
+            error_text,
+            reply_markup=get_main_menu()
+        )
+        # Сбрасываем состояние, чтобы бот не ждал повторного ввода URL
+        await state.finish()
         return
     
     # Сохраняем информацию о товаре в состояние
@@ -188,6 +227,7 @@ async def process_quantity_selection(callback_query: types.CallbackQuery, state:
         
         # Проверяем, есть ли информация о размерах товара
         available_sizes = product_info.get('available_sizes', [])
+        marketplace = product_info.get('marketplace', '')
         
         if available_sizes:
             # Создаем клавиатуру для выбора размера
@@ -199,8 +239,17 @@ async def process_quantity_selection(callback_query: types.CallbackQuery, state:
             
             # Переходим к следующему этапу - указанию размера
             await OrderStates.waiting_for_size.set()
+        elif marketplace in ['yandex_market', 'ozon']:
+            # Для Яндекс.Маркет и Озон предлагаем клавиатуру пропуска
+            await callback_query.message.edit_text(
+                "Укажите размер товара (если применимо) или нажмите 'Пропустить', если размер не требуется:",
+                reply_markup=get_skip_size_keyboard()
+            )
+            
+            # Переходим к следующему этапу - указанию размера
+            await OrderStates.waiting_for_size.set()
         else:
-            # Если нет информации о размерах, запрашиваем размер текстом
+            # Для других маркетплейсов или случаев без размеров просто запрашиваем размер текстом
             await callback_query.message.edit_text(
                 "Укажите размер товара (если применимо) или отправьте '-', если размер не требуется:",
                 reply_markup=get_back_menu()
@@ -263,8 +312,32 @@ async def process_size_selection(callback_query: types.CallbackQuery, state: FSM
     size_str = callback_query.data.replace('size_', '')
     
     if size_str == 'none':
-        # Пользователь выбрал "Не требуется"
+        # Пользователь выбрал "Не требуется" или "Пропустить"
         size = None
+        
+        # Сохраняем размер в состояние
+        await state.update_data(size=size)
+        
+        # Получаем данные из состояния
+        data = await state.get_data()
+        product_info = data.get('product_info', {})
+        
+        # Запрашиваем примечания к товару
+        await callback_query.message.edit_text(
+            "Укажите примечания к товару (если требуется) или нажмите 'Пропустить':",
+            reply_markup=get_notes_keyboard()
+        )
+        
+        # Переходим к следующему этапу - указанию цвета/примечаний
+        await OrderStates.waiting_for_color.set()
+        return
+    elif size_str == 'manual':
+        # Пользователь выбрал "Ввести вручную", запрашиваем размер текстом
+        await callback_query.message.edit_text(
+            "Введите размер товара:",
+            reply_markup=get_back_menu()
+        )
+        return
     else:
         size = size_str
     
@@ -274,6 +347,7 @@ async def process_size_selection(callback_query: types.CallbackQuery, state: FSM
     # Получаем данные из состояния
     data = await state.get_data()
     product_info = data.get('product_info', {})
+    marketplace = product_info.get('marketplace', '')
     
     # Получаем доступные цвета для выбранного размера
     available_colors = []
@@ -293,31 +367,47 @@ async def process_size_selection(callback_query: types.CallbackQuery, state: FSM
             reply_markup=get_color_keyboard(available_colors),
             parse_mode='HTML'
         )
+    elif marketplace in ['yandex_market', 'ozon']:
+        # Для Яндекс.Маркет и Озон предлагаем примечания к товару
+        await callback_query.message.edit_text(
+            "Укажите примечания к товару (если требуется) или нажмите 'Пропустить':",
+            reply_markup=get_notes_keyboard()
+        )
     else:
-        # Если нет доступных цветов, автоматически переходим к добавлению в корзину
-        await add_product_to_cart(callback_query.message, state, callback_query.from_user.id, color=None)
-        return
+        # Если нет доступных цветов, запрашиваем примечания к товару
+        await callback_query.message.edit_text(
+            "Укажите примечания к товару (если требуется) или нажмите 'Пропустить':",
+            reply_markup=get_notes_keyboard()
+        )
     
-    # Переходим к следующему этапу - указанию цвета
+    # Переходим к следующему этапу - указанию цвета/примечаний
     await OrderStates.waiting_for_color.set()
 
 async def process_color_selection(callback_query: types.CallbackQuery, state: FSMContext):
-    """Обработчик для выбора цвета товара через inline-клавиатуру."""
+    """Обработчик для выбора цвета товара или ввода примечаний через inline-клавиатуру."""
     await callback_query.answer()
     
-    # Получаем выбранный цвет из callback_data
-    color_str = callback_query.data.replace('color_', '')
+    # Получаем выбранное действие из callback_data
+    action_str = callback_query.data.replace('color_', '')
     
-    if color_str == 'none':
-        # Пользователь выбрал "Не требуется"
-        color = None
+    if action_str == 'none':
+        # Пользователь выбрал "Не требуется" или "Пропустить"
+        notes = None
+    elif action_str == 'manual':
+        # Пользователь выбрал "Ввести примечание", запрашиваем примечание текстом
+        await callback_query.message.edit_text(
+            "Введите примечания к товару:",
+            reply_markup=get_back_menu()
+        )
+        return
     else:
-        color = color_str
+        # Если был выбран конкретный цвет из списка
+        notes = action_str
     
-    # Добавляем товар в корзину
-    await add_product_to_cart(callback_query.message, state, callback_query.from_user.id, color)
+    # Добавляем товар в корзину с примечанием вместо цвета
+    await add_product_to_cart(callback_query.message, state, callback_query.from_user.id, notes)
 
-async def add_product_to_cart(message, state, user_id, color=None):
+async def add_product_to_cart(message, state, user_id, notes=None):
     """Функция для добавления товара в корзину."""
     # Получаем все данные из состояния
     data = await state.get_data()
@@ -327,7 +417,7 @@ async def add_product_to_cart(message, state, user_id, color=None):
     size = data.get('size')
     
     # Добавляем товар в корзину
-    success = add_to_cart(user_id, product_id, quantity, size, color)
+    success = add_to_cart(user_id, product_id, quantity, size, notes)
     
     if success:
         # Формируем текст о добавлении товара в корзину
@@ -341,12 +431,17 @@ async def add_product_to_cart(message, state, user_id, color=None):
         if size:
             cart_text += f"Размер: {size}\n"
         
-        if color:
-            cart_text += f"Цвет: {color}\n"
+        if notes:
+            cart_text += f"Примечания: {notes}\n"
         
-        # Расчет итоговой суммы
-        total_price = product_info['price'] * quantity
-        cart_text += f"\n<b>Итоговая сумма:</b> {total_price} ₽\n\n"
+        # Расчет итоговой суммы с явным преобразованием в число
+        try:
+            price = float(product_info['price'])
+            total_price = price * quantity
+            cart_text += f"\n<b>Итоговая сумма:</b> {total_price:.2f} ₽\n\n"
+        except (ValueError, TypeError):
+            # Если не удалось преобразовать цену в число, выводим сообщение
+            cart_text += f"\n<b>Итоговая сумма:</b> Не удалось рассчитать\n\n"
         
         cart_text += "Вы можете продолжить покупки или перейти в корзину."
         
@@ -442,21 +537,27 @@ async def process_product_size(message: types.Message, state: FSMContext):
     # Получаем данные о товаре из состояния
     data = await state.get_data()
     product_info = data.get('product_info', {})
+    marketplace = product_info.get('marketplace', '')
     
     # Если пользователь отправил '-', устанавливаем размер как None
     if size == '-':
         size = None
         await state.update_data(size=size)
         
-        # Запрашиваем цвет товара
-        await message.answer(
-            "Укажите цвет товара (если применимо) или отправьте '-', если цвет не требуется:",
-            reply_markup=get_back_menu()
-        )
-        
-        # Переходим к следующему этапу - указанию цвета
-        await OrderStates.waiting_for_color.set()
-        return
+        # Если это Yandex или Ozon, сразу добавляем товар в корзину без запроса цвета
+        if marketplace in ['yandex_market', 'ozon']:
+            await add_product_to_cart(message, state, message.from_user.id, notes=None)
+            return
+        else:
+            # Для других маркетплейсов запрашиваем цвет товара
+            await message.answer(
+                "Укажите цвет товара (если применимо) или отправьте '-', если цвет не требуется:",
+                reply_markup=get_back_menu()
+            )
+            
+            # Переходим к следующему этапу - указанию цвета
+            await OrderStates.waiting_for_color.set()
+            return
     
     # Проверяем, есть ли информация о размерах товара
     available_sizes = product_info.get('available_sizes', [])
@@ -494,6 +595,11 @@ async def process_product_size(message: types.Message, state: FSMContext):
     # Сохраняем размер и доступные цвета в состояние
     await state.update_data(size=size, available_colors=available_colors)
     
+    # Если это Yandex или Ozon и нет доступных цветов, сразу добавляем товар в корзину
+    if marketplace in ['yandex_market', 'ozon'] and not available_colors:
+        await add_product_to_cart(message, state, message.from_user.id, notes=None)
+        return
+    
     # Если есть доступные цвета для выбранного размера, предлагаем их выбрать
     if available_colors:
         # Создаем клавиатуру для выбора цвета
@@ -512,35 +618,16 @@ async def process_product_size(message: types.Message, state: FSMContext):
     # Переходим к следующему этапу - указанию цвета
     await OrderStates.waiting_for_color.set()
 
-async def process_product_color(message: types.Message, state: FSMContext):
-    """Обработчик цвета товара при текстовом вводе."""
-    color = message.text.strip()
+async def process_product_notes(message: types.Message, state: FSMContext):
+    """Обработчик примечаний к товару при текстовом вводе."""
+    notes = message.text.strip()
     
-    # Если пользователь отправил '-', устанавливаем цвет как None
-    if color == '-':
-        color = None
-    else:
-        # Получаем данные из состояния
-        data = await state.get_data()
-        available_colors = data.get('available_colors', [])
-        
-        # Проверяем, соответствует ли указанный цвет доступным цветам
-        if available_colors and color not in available_colors:
-            color_options = "\n".join([f"- {c}" for c in available_colors[:10]])
-            
-            # Если цветов больше 10, добавляем информацию об этом
-            if len(available_colors) > 10:
-                color_options += f"\n...и еще {len(available_colors) - 10} цветов"
-            
-            await message.answer(
-                f"❌ Указанный цвет недоступен. Выберите из доступных цветов:\n\n{color_options}\n\n"
-                f"Или отправьте '-', если цвет не важен.",
-                reply_markup=get_back_menu()
-            )
-            return
+    # Если пользователь отправил '-', устанавливаем примечания как None
+    if notes == '-':
+        notes = None
     
     # Добавляем товар в корзину с использованием общей функции
-    await add_product_to_cart(message, state, message.from_user.id, color)
+    await add_product_to_cart(message, state, message.from_user.id, notes)
 
 def register_order_handlers(dp):
     """Регистрация обработчиков для раздела 'Оформить заказ'."""
@@ -566,7 +653,7 @@ def register_order_handlers(dp):
     )
     
     dp.register_message_handler(process_product_size, state=OrderStates.waiting_for_size)
-    dp.register_message_handler(process_product_color, state=OrderStates.waiting_for_color)
+    dp.register_message_handler(process_product_notes, state=OrderStates.waiting_for_color)
     
     # Обработчик возврата в главное меню из любого состояния OrderStates
     dp.register_callback_query_handler(
