@@ -5,10 +5,10 @@ def get_main_menu():
     """Создать клавиатуру главного меню."""
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton("Мой кабинет", callback_data="cabinet"),
-        InlineKeyboardButton("Оформить заказ", callback_data="new_order"),
-        InlineKeyboardButton("Доставка", callback_data="delivery"),
-        InlineKeyboardButton("Моя корзина", callback_data="cart")
+        InlineKeyboardButton("👤 Мой кабинет", callback_data="cabinet"),
+        InlineKeyboardButton("🛍️ Оформить заказ", callback_data="new_order"),
+        InlineKeyboardButton("🚚 Доставка", callback_data="delivery"),
+        InlineKeyboardButton("🛒 Моя корзина", callback_data="cart")
     )
     return keyboard
 
@@ -233,4 +233,94 @@ def get_payment_info_keyboard(order_id):
         InlineKeyboardButton("◀️ Назад", callback_data="back"),
         InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
     )
+    return keyboard
+
+# Клавиатура для выбора количества товара
+def get_quantity_keyboard():
+    """Создать клавиатуру для выбора количества товара."""
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("1", callback_data="quantity_1"),
+        InlineKeyboardButton("2", callback_data="quantity_2"),
+        InlineKeyboardButton("Указать вручную", callback_data="quantity_manual")
+    )
+    # Добавляем кнопки "Назад" и "Главное меню"
+    keyboard.row(
+        InlineKeyboardButton("◀️ Назад", callback_data="back"),
+        InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
+    )
+    return keyboard
+
+# Клавиатура для выбора размера товара
+def get_size_keyboard(sizes):
+    """
+    Создать клавиатуру для выбора размера товара.
+    
+    Args:
+        sizes: список доступных размеров
+    """
+    keyboard = InlineKeyboardMarkup(row_width=3)
+    
+    # Добавляем доступные размеры
+    size_buttons = []
+    for size in sizes[:9]:  # Ограничиваем количество отображаемых размеров
+        if isinstance(size, dict):
+            size_name = size.get('name', '')
+            size_buttons.append(
+                InlineKeyboardButton(size_name, callback_data=f"size_{size_name}")
+            )
+        elif isinstance(size, str):
+            size_buttons.append(
+                InlineKeyboardButton(size, callback_data=f"size_{size}")
+            )
+    
+    # Добавляем кнопки размеров
+    for button in size_buttons:
+        keyboard.insert(button)
+    
+    # Добавляем кнопку "Не требуется"
+    keyboard.add(
+        InlineKeyboardButton("Не требуется", callback_data="size_none")
+    )
+    
+    # Добавляем кнопки "Назад" и "Главное меню"
+    keyboard.row(
+        InlineKeyboardButton("◀️ Назад", callback_data="back"),
+        InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
+    )
+    
+    return keyboard
+
+# Клавиатура для выбора цвета товара
+def get_color_keyboard(colors):
+    """
+    Создать клавиатуру для выбора цвета товара.
+    
+    Args:
+        colors: список доступных цветов
+    """
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    
+    # Добавляем доступные цвета
+    color_buttons = []
+    for color in colors[:8]:  # Ограничиваем количество отображаемых цветов
+        color_buttons.append(
+            InlineKeyboardButton(color, callback_data=f"color_{color}")
+        )
+    
+    # Добавляем кнопки цветов
+    for button in color_buttons:
+        keyboard.insert(button)
+    
+    # Добавляем кнопку "Не требуется"
+    keyboard.add(
+        InlineKeyboardButton("Не требуется", callback_data="color_none")
+    )
+    
+    # Добавляем кнопки "Назад" и "Главное меню"
+    keyboard.row(
+        InlineKeyboardButton("◀️ Назад", callback_data="back"),
+        InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
+    )
+    
     return keyboard 

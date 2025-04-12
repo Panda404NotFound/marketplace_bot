@@ -58,8 +58,7 @@ async def process_profile(callback_query: types.CallbackQuery):
         profile_text = (
             "👤 <b>Мой профиль</b>\n\n"
             f"Имя: {user.first_name or 'Не указано'}\n"
-            f"Фамилия: {user.last_name or 'Не указана'}\n"
-            f"Телефон: {user.phone or 'Не указан'}\n"
+            f"ID пользователя: {user_id}\n"
         )
     else:
         profile_text = "❌ Произошла ошибка при получении данных профиля."
